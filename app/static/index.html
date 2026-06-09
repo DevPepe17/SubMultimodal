@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AVSR — Reconocimiento del Habla Audio-Visual</title>
+    <meta name="description" content="Sistema de transcripción de voz en tiempo real con validación visual mediante seguimiento de labios.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        /* ═══════════════════════════════════════════════════ */
+        /*  Design System — Variables                        */
+        /* ═══════════════════════════════════════════════════ */
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-card: #1a1a2e;
+            --bg-card-hover: #1e1e35;
+            --border-subtle: rgba(255, 255, 255, 0.06);
+            --border-accent: rgba(99, 102, 241, 0.3);
+
+            --text-primary: #f0f0f5;
+            --text-secondary: #9ca3af;
+            --text-muted: #6b7280;
+
+            --accent-indigo: #6366f1;
+            --accent-indigo-glow: rgba(99, 102, 241, 0.15);
+            --accent-green: #10b981;
+            --accent-green-glow: rgba(16, 185, 129, 0.15);
+            --accent-red: #ef4444;
+            --accent-red-glow: rgba(239, 68, 68, 0.12);
+            --accent-amber: #f59e0b;
+            --accent-amber-glow: rgba(245, 158, 11, 0.12);
+
+            --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+            --radius-sm: 8px;
+            --radius-md: 12px;
+            --radius-lg: 16px;
+            --radius-xl: 20px;
+
+            --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.3);
+            --shadow-glow: 0 0 40px rgba(99, 102, 241, 0.08);
+        }
+
+        /* ═══════════════════════════════════════════════════ */
+        /*  Reset & Base                                     */
+        /* ═══════════════════════════════════════════════════ */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: var(--font-sans);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Subtle animated background gradient */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background:
+                radial-gradient(ellipse 600px 400px at 20% 10%, rgba(99, 102, 241, 0.06), transparent),
+                radial-gradient(ellipse 500px 300px at 80% 80%, rgba(16, 185, 129, 0.04), transparent);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* ═══════════════════════════════════════════════════ */
+        /*  Layout                                           */
+        /* ═══════════════════════════════════════════════════ */
+        .app-container {
+            position: relative;
+            z-index: 1;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 24px 20px 40px;
+        }
+
+        /* ═══════════════════════════════════════════════════ */
+        /*  Header                                           */
+        /* ═══════════════════════════════════════════════════ */
+        .header {
+            text-align: center;
+            margin-bottom: 28px;
+        }
+
+        .header h1 {
+            font-size: 1.6rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            background: linear-gradient(135deg, #f0f0f5 0%, #6366f1 50%, #10b981 100%);
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 6px;
+        }
+
+        .header p {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            font-weight: 300;
+        }
+
+        /* ═══════════════════════════════════════════════════ */
+        /*  Video Section                                    */
+        /* ═══════════════════════════════════════════════════ */
+        .video-section {
+            position: relative;
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-xl);
+            overflow: hidden;
+            box-shadow: var(--shadow-card);
+            margin-bottom: 20px;
+        }
+
+        .video-wrapper {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 4 / 3;
+            background: #000;
+        }
+
+        #camera-video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+            transform: scaleX(-1); /* Espejo */
+        }
+
+        /* Status overlay on video */
+        .video-overlay {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.72rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255,255,255,0.1);
+            transition: all 0.3s ease;
+        }
+
+        .status-badge.disconnected {
+            background: rgba(239, 68, 68, 0.2);
+            color: #fca5a5;
+        }
+        .status-badge.connecting {
+            background: rgba(245, 158, 11, 0.2);
+            color: #fde68a;
+        }
+        .status-badge.connected {
+            background: rgba(16, 185, 129, 0.2);
+            color: #6ee7b7;
+        }
+
+        .status-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+
+        .status-badge.connected .status-dot {
+            animation: pulse-dot 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(0.8); }
+        }
+
+        /* LOD indicator */
+        .lod-badge {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            font-weight: 500;
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255,255,255,0.1);
+            transition: all 0.3s ease;
+        }
+
+        .lod-badge.speaking {
+            background: rgba(16, 185, 129, 0.2);
+            color: #6ee7b7;
+        }
+        .lod-badge.silent {
+            background: rgba(107, 114, 128, 0.2);
+            color: #9ca3af;
+        }
+
+        /* Placeholder when camera is off */
+        .camera-placeholder {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            background: var(--bg-secondary);
+        }
+
+        .camera-placeholder svg {
+            width: 48px;
+            height: 48px;
+            color: var(--text-muted);
+            opacity: 0.5;
+        }
+
+        .camera-placeholder p {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        .camera-placeholder.hidden { display: none; }
+
+        /* ═══════════════════════════════════════════════════ */
+        /*  Controls                                         */
+        /* ═══════════════════════════════════════════════════ */
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 24px;
+            border-radius: var(--radius-md);
+            border: 1px solid var(--border-subtle);
+            font-family: var(--font-sans);
+            font-size: 0.85rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            outline: none;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #6366f1, #4f46e5);
+            color: #fff;
+            border-color: rgba(99, 102, 241, 0.5);
+            box-shadow: 0 2px 12px rgba(99, 102, 241, 0.25);
+        }
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 20px rgba(99, 102, 241, 0.35);
+        }
+        .btn-primary:active { transform: translateY(0); }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            color: #fff;
+            border-color: rgba(239, 68, 68, 0.5);
+            box-shadow: 0 2px 12px rgba(239, 68, 68, 0.2);
+        }
+        .btn-danger:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 20px rgba(239, 68, 68, 0.3);
+        }
+
+        .btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            transform: none !important;
+            box-shadow: none !important;
+        }
+
+        .btn svg { width: 16px; height: 16px; }
+
+        /* ═══════════════════════════════════════════════════ */
+        /*  Transcription Panel                              */
+        /* ═══════════════════════════════════════════════════ */
+        .transcript-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-xl);
+            box-shadow: var(--shadow-card);
+            overflow: hidden;
+        }
+
+        .transcript-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 20px;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .transcript-header h2 {
+            font-size: 0.9rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .transcript-header h2 svg { width: 16px; height: 16px; color: var(--accent-indigo); }
+
+        #transcript-count {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            font-family: var(--font-mono);
+        }
+
+        .transcript-body {
+            max-height: 340px;
+            overflow-y: auto;
+            padding: 8px;
+            scroll-behavior: smooth;
+        }
+
+        /* Custom scrollbar */
+        .transcript-body::-webkit-scrollbar { width: 5px; }
+        .transcript-body::-webkit-scrollbar-track { background: transparent; }
+        .transcript-body::-webkit-scrollbar-thumb {
+            background: rgba(99, 102, 241, 0.3);
+            border-radius: 10px;
+        }
+
+        .transcript-empty {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        .transcript-empty svg {
+            width: 32px;
+            height: 32px;
+            margin-bottom: 10px;
+            opacity: 0.3;
+        }
+
+        /* Individual transcript entry */
+        .transcript-entry {
+            padding: 10px 14px;
+            border-radius: var(--radius-sm);
+            margin-bottom: 4px;
+            animation: fadeSlideIn 0.3s ease-out;
+            border-left: 3px solid transparent;
+            transition: background 0.2s ease;
+        }
+
+        .transcript-entry:hover {
+            background: rgba(255,255,255,0.02);
+        }
+
+        .transcript-entry.approved {
+            border-left-color: var(--accent-green);
+            background: var(--accent-green-glow);
+        }
+
+        .transcript-entry.penalized {
+            border-left-color: var(--accent-amber);
+            background: var(--accent-amber-glow);
+        }
+
+        .transcript-entry.discarded {
+            border-left-color: var(--accent-red);
+            background: var(--accent-red-glow);
+        }
+
+        .transcript-text {
+            font-size: 0.95rem;
+            font-weight: 400;
+            line-height: 1.5;
+            margin-bottom: 4px;
+        }
+
+        .transcript-entry.discarded .transcript-text {
+            color: var(--text-muted);
+            font-style: italic;
+            font-size: 0.82rem;
+        }
+
+        .transcript-meta {
+            display: flex;
+            gap: 12px;
+            font-size: 0.68rem;
+            font-family: var(--font-mono);
+            color: var(--text-muted);
+        }
+
+        @keyframes fadeSlideIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ═══════════════════════════════════════════════════ */
+        /*  Canvas (hidden, used for frame capture)          */
+        /* ═══════════════════════════════════════════════════ */
+        #capture-canvas { display: none; }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <h1>AVSR — Reconocimiento Audio-Visual</h1>
+            <p>Transcripción en tiempo real con validación de movimiento labial</p>
+        </header>
+
+        <!-- Video -->
+        <section class="video-section" id="video-section">
+            <div class="video-wrapper">
+                <video id="camera-video" autoplay playsinline muted></video>
+                <img id="debug-video" alt="Debug Video" style="display: none; width: 100%; height: 100%; object-fit: cover;">
+                <canvas id="capture-canvas"></canvas>
+
+                <div class="camera-placeholder" id="camera-placeholder">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z" />
+                    </svg>
+                    <p>Presiona "Iniciar" para activar cámara y micrófono</p>
+                </div>
+
+                <div class="video-overlay">
+                    <span class="status-badge disconnected" id="status-badge">
+                        <span class="status-dot"></span>
+                        <span id="status-text">Desconectado</span>
+                    </span>
+                </div>
+
+                <span class="lod-badge silent" id="lod-badge" style="display:none;">
+                    <span id="lod-text">LOD: 0.0000</span>
+                </span>
+            </div>
+        </section>
+
+        <!-- Controls -->
+        <div class="controls">
+            <button class="btn btn-primary" id="btn-start">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z" /></svg>
+                Iniciar
+            </button>
+            <button class="btn btn-danger" id="btn-stop" disabled>
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5.25 7.5A2.25 2.25 0 0 1 7.5 5.25h9a2.25 2.25 0 0 1 2.25 2.25v9a2.25 2.25 0 0 1-2.25 2.25h-9a2.25 2.25 0 0 1-2.25-2.25v-9Z" /></svg>
+                Detener
+            </button>
+        </div>
+
+        <!-- Transcriptions -->
+        <section class="transcript-section">
+            <div class="transcript-header">
+                <h2>
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 0 1 .865-.501 48.172 48.172 0 0 0 3.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0 0 12 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z" /></svg>
+                    Transcripciones
+                </h2>
+                <span id="transcript-count">0 mensajes</span>
+            </div>
+            <div class="transcript-body" id="transcript-body">
+                <div class="transcript-empty" id="transcript-empty">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 0 0 6-6v-1.5m-6 7.5a6 6 0 0 1-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 0 1-3-3V4.5a3 3 0 1 1 6 0v8.25a3 3 0 0 1-3 3Z" /></svg>
+                    <p>Habla para ver las transcripciones aquí</p>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script>
+    // ═══════════════════════════════════════════════════════════
+    //  AVSR Web Client — JavaScript
+    // ═══════════════════════════════════════════════════════════
+
+    const PREFIX_AUDIO = 0x01;
+    const PREFIX_VIDEO = 0x02;
+    const SAMPLE_RATE = 16000;
+    const VIDEO_FPS = 30;
+    const JPEG_QUALITY = 0.60;
+
+    const video = document.getElementById('camera-video');
+    const debugVideo = document.getElementById('debug-video');
+    const canvas = document.getElementById('capture-canvas');
+    const ctx = canvas.getContext('2d');
+    const btnStart = document.getElementById('btn-start');
+    const btnStop = document.getElementById('btn-stop');
+    const statusBadge = document.getElementById('status-badge');
+    const statusText = document.getElementById('status-text');
+    const lodBadge = document.getElementById('lod-badge');
+    const lodText = document.getElementById('lod-text');
+    const placeholder = document.getElementById('camera-placeholder');
+    const transcriptBody = document.getElementById('transcript-body');
+    const transcriptEmpty = document.getElementById('transcript-empty');
+    const transcriptCount = document.getElementById('transcript-count');
+
+    // State
+    let ws = null;
+    let mediaStream = null;
+    let audioContext = null;
+    let audioWorklet = null;
+    let videoInterval = null;
+    let messageCount = 0;
+    let debugVideoUrl = null;
+
+    // ─── Status Updates ───
+    function setStatus(state, text) {
+        statusBadge.className = 'status-badge ' + state;
+        statusText.textContent = text;
+    }
+
+    function updateLOD(lod, speaking) {
+        lodBadge.style.display = 'block';
+        lodBadge.className = 'lod-badge ' + (speaking ? 'speaking' : 'silent');
+        lodText.textContent = (speaking ? '🗣️ ' : '🔇 ') + 'LOD: ' + lod.toFixed(4);
+    }
+
+    // ─── Start Streaming ───
+    btnStart.addEventListener('click', async () => {
+        try {
+            setStatus('connecting', 'Conectando...');
+            btnStart.disabled = true;
+
+            // 1. Get camera + microphone
+            mediaStream = await navigator.mediaDevices.getUserMedia({
+                video: { width: 640, height: 480, facingMode: 'user' },
+                audio: { sampleRate: SAMPLE_RATE, channelCount: 1, echoCancellation: false, noiseSuppression: false }
+            });
+
+            // Show video initially for capture
+            video.srcObject = mediaStream;
+            video.style.display = 'block';
+            debugVideo.style.display = 'none';
+            placeholder.classList.add('hidden');
+
+            // 2. Connect WebSocket
+            const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(wsProtocol + '//' + location.host + '/stream');
+            ws.binaryType = 'arraybuffer';
+
+            ws.onopen = () => {
+                setStatus('connected', 'Conectado');
+                btnStop.disabled = false;
+                startAudioCapture();
+                startVideoCapture();
+            };
+
+            ws.onmessage = (event) => {
+                // Check if message is binary
+                if (event.data instanceof ArrayBuffer) {
+                    const bytes = new Uint8Array(event.data);
+                    if (bytes.length > 0 && bytes[0] === 0x03) {
+                        handleDebugVideo(bytes.slice(1));
+                    }
+                    return;
+                }
+
+                // Otherwise, it's text (JSON)
+                try {
+                    const data = JSON.parse(event.data);
+                    handleTranscription(data);
+                } catch(e) {
+                    console.error('Error parsing response:', e);
+                }
+            };
+
+            ws.onclose = () => {
+                setStatus('disconnected', 'Desconectado');
+                stopAll();
+            };
+
+            ws.onerror = (err) => {
+                console.error('WebSocket error:', err);
+                setStatus('disconnected', 'Error de conexión');
+                stopAll();
+            };
+
+        } catch(err) {
+            console.error('Error starting:', err);
+            setStatus('disconnected', 'Error: ' + err.message);
+            btnStart.disabled = false;
+        }
+    });
+
+    // ─── Handle Debug Video ───
+    function handleDebugVideo(jpegBytes) {
+        // Create Blob from bytes
+        const blob = new Blob([jpegBytes], { type: 'image/jpeg' });
+        
+        if (debugVideoUrl) {
+            URL.revokeObjectURL(debugVideoUrl);
+        }
+        
+        debugVideoUrl = URL.createObjectURL(blob);
+        debugVideo.src = debugVideoUrl;
+        
+        // Hide local camera preview, show debug image from server
+        video.style.display = 'none';
+        debugVideo.style.display = 'block';
+    }
+
+    // ─── Stop Streaming ───
+    btnStop.addEventListener('click', () => { stopAll(); });
+
+    function stopAll() {
+        // Stop video capture
+        if (videoInterval) { clearInterval(videoInterval); videoInterval = null; }
+
+        // Stop audio
+        if (audioContext) { audioContext.close().catch(()=>{}); audioContext = null; }
+
+        // Close WebSocket
+        if (ws && ws.readyState === WebSocket.OPEN) { ws.close(); }
+        ws = null;
+
+        // Stop media tracks
+        if (mediaStream) {
+            mediaStream.getTracks().forEach(t => t.stop());
+            mediaStream = null;
+        }
+
+        video.srcObject = null;
+        placeholder.classList.remove('hidden');
+        lodBadge.style.display = 'none';
+        setStatus('disconnected', 'Desconectado');
+        btnStart.disabled = false;
+        btnStop.disabled = true;
+    }
+
+    // ─── Audio Capture (ScriptProcessorNode + downsampling) ───
+    function startAudioCapture() {
+        const audioTrack = mediaStream.getAudioTracks()[0];
+        if (!audioTrack) return;
+
+        audioContext = new AudioContext({ sampleRate: SAMPLE_RATE });
+        const source = audioContext.createMediaStreamSource(
+            new MediaStream([audioTrack])
+        );
+
+        // ScriptProcessorNode: captures PCM float32 buffers
+        // bufferSize=4096 ≈ 256ms at 16kHz
+        const processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+        processor.onaudioprocess = (e) => {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+            const float32 = e.inputBuffer.getChannelData(0);
+
+            // Resample if needed (browser might use native rate despite our request)
+            let samples;
+            if (audioContext.sampleRate !== SAMPLE_RATE) {
+                samples = downsample(float32, audioContext.sampleRate, SAMPLE_RATE);
+            } else {
+                samples = float32;
+            }
+
+            // Convert float32 [-1,1] → int16 [-32768,32767]
+            const int16 = new Int16Array(samples.length);
+            for (let i = 0; i < samples.length; i++) {
+                const s = Math.max(-1, Math.min(1, samples[i]));
+                int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+            }
+
+            // Send: [PREFIX_AUDIO] + [PCM bytes]
+            const msg = new Uint8Array(1 + int16.byteLength);
+            msg[0] = PREFIX_AUDIO;
+            msg.set(new Uint8Array(int16.buffer), 1);
+
+            try { ws.send(msg.buffer); } catch(e) {}
+        };
+
+        source.connect(processor);
+        processor.connect(audioContext.destination);
+    }
+
+    // Simple linear interpolation downsampler
+    function downsample(buffer, fromRate, toRate) {
+        if (fromRate === toRate) return buffer;
+        const ratio = fromRate / toRate;
+        const newLength = Math.round(buffer.length / ratio);
+        const result = new Float32Array(newLength);
+        for (let i = 0; i < newLength; i++) {
+            const idx = i * ratio;
+            const lo = Math.floor(idx);
+            const hi = Math.min(lo + 1, buffer.length - 1);
+            const frac = idx - lo;
+            result[i] = buffer[lo] * (1 - frac) + buffer[hi] * frac;
+        }
+        return result;
+    }
+
+    // ─── Video Capture (Canvas → JPEG → WebSocket) ───
+    function startVideoCapture() {
+        canvas.width = 640;
+        canvas.height = 480;
+
+        videoInterval = setInterval(() => {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            if (video.readyState < 2) return; // Not ready yet
+
+            // Draw video frame to canvas
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            // Export as JPEG blob
+            canvas.toBlob((blob) => {
+                if (!blob || !ws || ws.readyState !== WebSocket.OPEN) return;
+
+                blob.arrayBuffer().then(buf => {
+                    // Send: [PREFIX_VIDEO] + [JPEG bytes]
+                    const msg = new Uint8Array(1 + buf.byteLength);
+                    msg[0] = PREFIX_VIDEO;
+                    msg.set(new Uint8Array(buf), 1);
+
+                    try { ws.send(msg.buffer); } catch(e) {}
+                });
+            }, 'image/jpeg', JPEG_QUALITY);
+
+        }, 1000 / VIDEO_FPS);
+    }
+
+    // ─── Handle Transcription Results ───
+    function handleTranscription(data) {
+        if (data.tipo !== 'transcripcion') return;
+
+        // Update LOD display
+        const speaking = data.estado_labios === 'hablando';
+        updateLOD(data.lod_promedio || 0, speaking);
+
+        // Skip empty results with no interesting status
+        if (!data.texto && data.motivo === 'transcripcion_vacia') return;
+
+        // Determine entry type
+        let entryClass, label;
+        if (data.fusion_aprobada && data.texto) {
+            entryClass = 'approved';
+            label = '✅';
+        } else if (data.texto && !data.fusion_aprobada) {
+            entryClass = 'penalized';
+            label = '⚠️';
+        } else {
+            entryClass = 'discarded';
+            label = '❌';
+        }
+
+        // Hide empty placeholder
+        transcriptEmpty.style.display = 'none';
+
+        // Create entry
+        const entry = document.createElement('div');
+        entry.className = 'transcript-entry ' + entryClass;
+
+        const textContent = data.texto || '(alucinación filtrada)';
+        const time = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+        entry.innerHTML = `
+            <div class="transcript-text">${label} ${escapeHTML(textContent)}</div>
+            <div class="transcript-meta">
+                <span>${time}</span>
+                <span>ratio: ${(data.speaking_ratio || 0).toFixed(2)}</span>
+                <span>LOD: ${(data.lod_promedio || 0).toFixed(4)}</span>
+                <span>${data.motivo || ''}</span>
+            </div>
+        `;
+
+        transcriptBody.appendChild(entry);
+        transcriptBody.scrollTop = transcriptBody.scrollHeight;
+
+        // Update count
+        messageCount++;
+        transcriptCount.textContent = messageCount + ' mensaje' + (messageCount !== 1 ? 's' : '');
+    }
+
+    function escapeHTML(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+    </script>
+</body>
+</html>

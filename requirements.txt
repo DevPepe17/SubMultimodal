@@ -1,0 +1,14 @@
+# Backend y Streaming
+fastapi>=0.100.0
+uvicorn>=0.23.0
+websockets>=11.0
+
+# Visión Computacional e IA (Labios)
+opencv-python>=4.8.0
+mediapipe>=0.10.3
+
+# Transcripción Acústica (Whisper)
+faster-whisper>=1.0.0
+
+# Validación y Estructuras de Datos
+pydantic>=2.0.0
